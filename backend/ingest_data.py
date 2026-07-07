@@ -1,19 +1,22 @@
 import requests
 import json
 
-def fetch_data():
+def ingest_world_cup_json():
     url = "https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json"
+    
+    print("[1/2] Fetching live data from OpenFootball...")
     try:
         response = requests.get(url)
-        response.raise_for_status()
+        response.raise_for_status() # This will crash if the website is down
         data = response.json()
         
-        # Save locally so you have the "Source of Truth"
+        # Save as our 'master copy'
         with open('world_cup_data.json', 'w') as f:
             json.dump(data, f, indent=4)
-        print("Success: Data pulled and saved to world_cup_data.json")
+        print("Success: world_cup_data.json created.")
+        
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Failed to fetch data: {e}")
 
 if __name__ == "__main__":
-    fetch_data()
+    ingest_world_cup_json()
