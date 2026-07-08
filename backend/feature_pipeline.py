@@ -8,7 +8,7 @@ def execute_phase_1_pipeline():
     print("[Phase 1] Ingesting Historical Ledger (results.csv)...")
     con.execute("""
         CREATE OR REPLACE TABLE historical_results AS 
-        SELECT * FROM read_csv_auto('results.csv', nullstr='NA')
+        SELECT * FROM read_csv_auto('data/results.csv', nullstr='NA')
         WHERE home_score IS NOT NULL AND away_score IS NOT NULL
     """)
 
@@ -112,7 +112,7 @@ def execute_phase_1_pipeline():
     """).fetchdf()
 
     # Save the Phase 1 Augmented Matrix
-    feature_matrix.to_csv('master_feature_matrix.csv', index=False)
+    feature_matrix.to_csv('data/master_feature_matrix.csv', index=False)
     
     print("\n--- Pipeline Complete. Diagnostic Preview of Augmented Features ---")
     print(feature_matrix[['team1', 'team2', 'stadium_capacity', 'rivalry_match_count']].head())

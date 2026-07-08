@@ -9,9 +9,9 @@ def fetch_data():
         data = response.json()
         
         # Save locally so you have the "Source of Truth"
-        with open('world_cup_data.json', 'w') as f:
+        with open('data/world_cup_data.json', 'w') as f:
             json.dump(data, f, indent=4)
-        print("Success: Data pulled and saved to world_cup_data.json")
+        print("Success: Data pulled and saved to data/world_cup_data.json")
     except Exception as e:
         print(f"Error: {e}")
 

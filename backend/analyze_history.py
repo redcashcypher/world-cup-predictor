@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 
-DATA_PATH = "results.csv"
+DATA_PATH = "data/results.csv"
 def analyze_historical_powerhouses():
     print("Extracting baseline team performance metrics...")
         
@@ -39,7 +39,7 @@ def analyze_historical_powerhouses():
     print("\n--- TOP 10 HISTORICAL POWERHOUSES (WIN RATE %) ---")
     print( established_teams.head(10))
     # Serialize the metrics to a JSON file for backend ingestion
-    established_teams.to_json("team_form_baseline.json")
+    established_teams.to_json("data/team_form_baseline.json")
     print("Baseline metrics successfully exported to team_form_baseline.json")  
     # --- RIVALRY ANALYSIS ---
     # Create a unified matchup string (alphabetically sorted so A vs B is the same as B vs A)
@@ -55,7 +55,7 @@ def analyze_historical_powerhouses():
     print(top_rivalries.head(10))
     
     # Serialize the rivalries to JSON
-    top_rivalries.to_json("rivalries_baseline.json")
+    top_rivalries.to_json("data/rivalries_baseline.json")
     print("Rivalry metrics successfully exported to rivalries_baseline.json") 
 if __name__ == "__main__":
     analyze_historical_powerhouses()

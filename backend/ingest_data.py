@@ -10,10 +10,10 @@ def ingest_world_cup_json():
         response.raise_for_status() # This will crash if the website is down
         data = response.json()
         
-        # Save as our 'master copy'
-        with open('world_cup_data.json', 'w') as f:
+        # Save as our 'master copy' inside the data folder
+        with open('data/world_cup_data.json', 'w') as f:
             json.dump(data, f, indent=4)
-        print("Success: world_cup_data.json created.")
+        print("Success: data/world_cup_data.json created.")
         
     except Exception as e:
         print(f"Failed to fetch data: {e}")

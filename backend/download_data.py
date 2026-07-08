@@ -13,5 +13,6 @@ if "KAGGLE_API_TOKEN" not in os.environ:
 import kaggle
 
 print("Authenticating and initializing download...")
-kaggle.api.dataset_download_files('martj42/international-football-results-from-1872-to-2017', path='.', unzip=True)
-print("Ingestion complete. The dataset should be in your directory.")
+# Changed path='.' to path='data' so Kaggle unzips directly into the right place
+kaggle.api.dataset_download_files('martj42/international-football-results-from-1872-to-2017', path='data', unzip=True)
+print("Ingestion complete. The dataset should be in your data/ directory.")
