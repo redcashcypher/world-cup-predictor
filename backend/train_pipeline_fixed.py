@@ -1,3 +1,4 @@
+import joblib
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
@@ -43,7 +44,6 @@ def execute_outcome_pipeline():
 
     # 3. FEATURE SELECTION LAYER
     # Focus strictly on pristine football performance metrics common to both sets.
-    # We omit stadium_capacity and group because they don't apply historically or add noise.
     features = [
         't1_win_rate', 't1_avg_goals',
         't2_win_rate', 't2_avg_goals',
@@ -62,7 +62,6 @@ def execute_outcome_pipeline():
     print(f"[Telemetry] Split specs -> Train size: {len(X_train)} | Test size: {len(X_test)}")
 
     # 5. INITIALIZE HISTGRADIENTBOOSTING CLASSIFIER
-    # Tree-based models are scale-invariant and handle NaNs natively—no scaler needed!
     model = HistGradientBoostingClassifier(
         max_iter=100,
         learning_rate=0.05,
@@ -83,8 +82,11 @@ def execute_outcome_pipeline():
     skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
     cv_acc = cross_val_score(model, X_full, Y_full, cv=skf, scoring='accuracy')
     print(f"Accuracy across folds: {np.round(cv_acc, 2)} -> mean {cv_acc.mean():.2f} +/- {cv_acc.std():.2f}")
+    
+    # 8. SERIALIZATION (Correctly scoped inside the function)
+    joblib.dump(model, "data/match_model.joblib")
+    print("\n[Model Serialization] SUCCESS: HistGradientBoostingClassifier saved to data/match_model.joblib")
 
-    # 8. INFERENCE FOR UPCOMING MATCHES
     if not upcoming_matches.empty:
         print("\n============= UPCOMING 2026 FIXTURE PREDICTIONS =============")
         X_upcoming = upcoming_matches[features]
@@ -94,7 +96,6 @@ def execute_outcome_pipeline():
         upcoming_matches['pred_class'] = pred_outcomes
         class_mapping = {0: 'Draw', 1: 'Team 1 Win', 2: 'Team 2 Win'}
 
-        # Ensure watchability score column exists for downstream presentation
         if 'watchability_score' not in upcoming_matches.columns:
             upcoming_matches['watchability_score'] = 5.0
 

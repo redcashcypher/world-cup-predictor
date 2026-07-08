@@ -1,146 +1,118 @@
-"""
-World Cup Watch Party Predictor - Unified Backend Engine
-Handles ML Training on real historical data and serves the FastAPI endpoints.
-"""
-import os
-import pandas as pd
-import numpy as np
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import Optional
-from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
+import sqlite3
+import pandas as pd
 import joblib
+import os
 
-# --- ML CONFIGURATION ---
-MODEL_PATH = "match_model.joblib"
-SCALER_PATH = "scaler.joblib"
-DATA_PATH = "results.csv"
-FEATURE_NAMES = ["rank_diff", "form_diff", "h2h_win_rate", "is_knockout", "rivalry"]
-
-def train_model():
-    """Ingests real Kaggle data, engineers features, and trains the model."""
-    print("Initializing ML Training Pipeline with real historical data...")
-    if not os.path.exists(DATA_PATH):
-        raise FileNotFoundError(f"Missing {DATA_PATH}. Please run the Kaggle download script first.")
-
-    # Ingest the payload
-    df = pd.read_csv(DATA_PATH)
-    
-    # Feature Engineering: Calculate real match outcomes
-    # 0 = away win, 1 = draw, 2 = home win
-    conditions = [
-        (df['home_score'] > df['away_score']),
-        (df['home_score'] < df['away_score'])
-    ]
-    choices = [2, 0]
-    df['label'] = np.select(conditions, choices, default=1)
-    
-    # To keep the model robust but simple, we simulate the complex FIFA ranks for historical data
-    # (Since historical FIFA rankings require a massive secondary database to map perfectly)
-    np.random.seed(42)
-    df['rank_diff'] = np.random.normal(0, 15, len(df))
-    df['form_diff'] = np.random.normal(0, 3, len(df))
-    df['h2h_win_rate'] = np.random.uniform(0, 1, len(df))
-    df['is_knockout'] = df['tournament'].apply(lambda x: 1 if 'World Cup' in x else 0)
-    df['rivalry'] = np.random.randint1(0, 2, len(df))
-
-    X = df[FEATURE_NAMES]
-    y = df["label"]
-
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-
-    # Train the Logistic Regression Model
-    clf = LogisticRegression(max_iter=1000)
-    clf.fit(X_train_scaled, y_train)
-
-    # Serialize and save to disk
-    joblib.dump(clf, MODEL_PATH)
-    joblib.dump(scaler, SCALER_PATH)
-    print("Model successfully trained and serialized.")
-    return clf, scaler
-
-def load_model():
-    """Loads the model from disk, or trains it if it doesn't exist."""
-    if not (os.path.exists(MODEL_PATH) and os.path.exists(SCALER_PATH)):
-        return train_model()
-    return joblib.load(MODEL_PATH), joblib.load(SCALER_PATH)
-
-# --- FASTAPI INFRASTRUCTURE ---
-app = FastAPI(title="World Cup Watch Party Predictor API")
+app = FastAPI(
+    title="World Cup Watch Party Predictor API",
+    description="Serving live tournament schedules, live ML predictions, and Golden Boot standings.",
+    version="1.1.0"
+)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # In production, restrict this to your frontend URL
+    allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Load the brain into memory on startup
-clf, scaler = load_model()
+DB_PATH = "data/world_cup.db"
+MODEL_PATH = "data/match_model.joblib" # Adjust path to your trained model file
+MODEL = None
 
-# Mock live data for the current tournament state
-TEAMS = {
-    "BRA": {"name": "Brazil", "rank": 3, "form": 8},
-    "POR": {"name": "Portugal", "rank": 6, "form": 7},
-    "ARG": {"name": "Argentina", "rank": 1, "form": 9},
-    "NED": {"name": "Netherlands", "rank": 8, "form": 6},
-    "FRA": {"name": "France", "rank": 2, "form": 8},
-    "MAR": {"name": "Morocco", "rank": 12, "form": 7},
-    "ENG": {"name": "England", "rank": 4, "form": 7},
-    "GER": {"name": "Germany", "rank": 9, "form": 6},
-    "ESP": {"name": "Spain", "rank": 5, "form": 9},
-    "USA": {"name": "USA", "rank": 14, "form": 6},
-}
+@app.on_event("startup")
+def startup_load_model():
+    """Loads the trained ML model into server memory once upon initialization."""
+    global MODEL
+    if os.path.exists(MODEL_PATH):
+        try:
+            MODEL = joblib.load(MODEL_PATH)
+            print("[Server] SUCCESS: Machine Learning Model loaded into runtime.")
+        except Exception as e:
+            print(f"[Server] WARNING: Could not load model: {e}")
+    else:
+        print("[Server] WARNING: data/match_model.joblib not found. Live predictions will be disabled.")
 
-FIXTURES = [
-    {"id": "m1", "home": "BRA", "away": "POR", "stage": "Round of 16", "rivalry": False, "h2h_win_rate": 0.45},
-    {"id": "m2", "home": "ARG", "away": "NED", "stage": "Round of 16", "rivalry": True, "h2h_win_rate": 0.55},
-    {"id": "m3", "home": "FRA", "away": "MAR", "stage": "Round of 16", "rivalry": False, "h2h_win_rate": 0.60},
-    {"id": "m4", "home": "ENG", "away": "GER", "stage": "Round of 16", "rivalry": True, "h2h_win_rate": 0.40},
-]
+def get_db_connection():
+    if not os.path.exists(DB_PATH):
+        raise HTTPException(status_code=503, detail="Database offline.")
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
 
-class PredictRequest(BaseModel):
-    home_team: str
-    away_team: str
-    is_knockout: bool = True
-    rivalry: bool = False
-    h2h_win_rate: Optional[float] = 0.5
+@app.get("/api/v1/fixtures")
+def get_raw_schedule():
+    """Serves the complete 104-match raw tournament calendar/schedule."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM raw_schedule ORDER BY date ASC")
+        matches = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return {"status": "success", "count": len(matches), "data": matches}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-def compute_hype(probs: dict, rivalry: bool) -> int:
-    closeness = 100 - abs(probs["home_win"] - probs["away_win"])
-    rivalry_bonus = 15 if rivalry else 0
-    hype = closeness * 0.6 + rivalry_bonus + 10
-    return round(max(0, min(100, hype)))
+@app.get("/api/v1/predictions")
+def get_ml_predictions():
+    """Serves the 98 resolved fixtures complete with calculated watchability scores and live ML probability vectors."""
+    if MODEL is None:
+        raise HTTPException(status_code=503, detail="ML inference engine is offline. Model file missing.")
+        
+    try:
+        conn = get_db_connection()
+        df = pd.read_sql_query("SELECT * FROM predicted_fixtures", conn)
+        conn.close()
 
-def build_prediction(home: str, away: str, is_knockout: bool, rivalry: bool, h2h_win_rate: float):
-    rank_diff = TEAMS[away]["rank"] - TEAMS[home]["rank"]
-    form_diff = TEAMS[home]["form"] - TEAMS[away]["form"]
-    
-    features = np.array([[rank_diff, form_diff, h2h_win_rate, int(is_knockout), int(rivalry)]])
-    features_scaled = scaler.transform(features)
-    probs_array = clf.predict_proba(features_scaled)[0]
-    
-    prob_by_label = dict(zip(clf.classes_, probs_array))
-    probs = {
-        "away_win": round(prob_by_label.get(0, 0) * 100, 1),
-        "draw": round(prob_by_label.get(1, 0) * 100, 1),
-        "home_win": round(prob_by_label.get(2, 0) * 100, 1),
-    }
-    
-    hype = compute_hype(probs, rivalry)
-    return {"home": home, "away": away, "probabilities": probs, "hype_score": hype}
+        if df.empty:
+            return {"status": "success", "count": 0, "data": []}
 
-@app.get("/fixtures")
-def get_fixtures():
-    results = []
-    for f in FIXTURES:
-        pred = build_prediction(f["home"], f["away"], True, f["rivalry"], f["h2h_win_rate"])
-        results.append({**f, **pred})
-    results.sort(key=lambda x: x["hype_score"], reverse=True)
-    return results
+        # FIX 1: Aligned feature columns exactly with the training matrix (6 features)
+        feature_cols = [
+            't1_win_rate', 
+            't1_avg_goals', 
+            't2_win_rate', 
+            't2_avg_goals', 
+            'rivalry_match_count', 
+            'rivalry_avg_goals'
+        ] 
+        
+        X = df[feature_cols]
+        probabilities = MODEL.predict_proba(X) 
+        
+        results = []
+        # FIX 2: Bulletproof iteration using enumerate to decouple from the Pandas index
+        for i, (_, row) in enumerate(df.iterrows()):
+            results.append({
+                "date": row.get("date"),
+                "team1": row.get("team1"),
+                "team2": row.get("team2"),
+                "watchability_score": row.get("watchability_score", 5.0),
+                "probabilities": {
+                    # FIX 3: Corrected Scikit-Learn class label mapping
+                    # Class 0 = Draw, Class 1 = Team 1 Win, Class 2 = Team 2 Win
+                    "team1_win": round(probabilities[i][1] * 100, 2),
+                    "draw": round(probabilities[i][0] * 100, 2),
+                    "team2_win": round(probabilities[i][2] * 100, 2)
+                }
+            })
+
+        return {"status": "success", "count": len(results), "data": results}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/golden-boot")
+def get_golden_boot():
+    """Serves the deterministic tournament standings from player_goals."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT rank, player, team, goals, penalties FROM player_goals ORDER BY goals DESC, player ASC LIMIT 10")
+        leaderboard = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return {"status": "success", "disclaimer": "Ties broken alphabetically.", "data": leaderboard}
+    except sqlite3.OperationalError:
+        raise HTTPException(status_code=503, detail="Golden Boot standings not initialized.")

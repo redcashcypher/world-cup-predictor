@@ -1,47 +1,41 @@
 import json
 import pandas as pd
+import os
 
-def process_world_cup_json():
-    print("[Ingestion Engine] Parsing raw World Cup JSON payload...")
+def process_raw_fixtures(input_path='data/world_cup_data.json', output_path='data/matches_clean.csv'):
+    print("[ETL] Booting dimensional flattening engine...")
     
-    # Load the raw file from the new data directory
-    with open('data/world_cup_data.json', 'r') as f:
-        data = json.load(f)
-    
-    all_matches = []
-    
-    # The OpenFootball schema uses a flat 'matches' array
-    matches = data.get('matches', [])
-    
-    if not matches:
-        print("CRITICAL ERROR: No 'matches' array found in JSON payload.")
+    if not os.path.exists(input_path):
+        print(f"CRITICAL ERROR: {input_path} not found. Please run ingest_data.py first.")
         return
 
-    for match in matches:
-        # OpenFootball schema can be inconsistent: sometimes teams are nested dicts, sometimes flat strings.
-        # This handles both cases gracefully.
-        t1 = match.get('team1')
-        t2 = match.get('team2')
-        team1_name = t1.get('name') if isinstance(t1, dict) else t1
-        team2_name = t2.get('name') if isinstance(t2, dict) else t2
+    with open(input_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    
+    matches = data.get('matches', [])
+    records = []
+    
+    for m in matches:
+        # OpenFootball feeds sometimes nest names inside objects
+        team1 = m.get('team1', {}).get('name') if isinstance(m.get('team1'), dict) else m.get('team1')
+        team2 = m.get('team2', {}).get('name') if isinstance(m.get('team2'), dict) else m.get('team2')
+        stadium = m.get('stadium', {}).get('name') if isinstance(m.get('stadium'), dict) else m.get('stadium')
         
-        # Safely extract full-time (ft) scores if the match has been played
-        score_data = match.get('score')
-        ft_score = score_data.get('ft') if score_data else None
-        
-        all_matches.append({
-            'date': match.get('date'),
-            'team1': team1_name,
-            'team2': team2_name,
-            'score1': ft_score[0] if ft_score and len(ft_score) > 0 else None,
-            'score2': ft_score[1] if ft_score and len(ft_score) > 1 else None,
-            'group': match.get('round') or match.get('group', 'Unknown Phase') 
+        records.append({
+            'date': m.get('date'),
+            'team1': team1,
+            'team2': team2,
+            'score1': m.get('score1'),
+            'score2': m.get('score2'),
+            'round': m.get('round'),
+            'group': m.get('group'),
+            'stadium': stadium
         })
-            
-    # Serialize to CSV
-    df = pd.DataFrame(all_matches)
-    df.to_csv('data/matches_clean.csv', index=False)
-    print(f"[Ingestion Engine] SUCCESS: data/matches_clean.csv created with {len(df)} rows. Matrix is primed.")
+    
+    df = pd.DataFrame(records)
+    df.to_csv(output_path, index=False)
+    print(f"[ETL] SUCCESS: Flattened {len(df)} matches. Schema locked and saved to {output_path}")
+    return df
 
 if __name__ == "__main__":
-    process_world_cup_json()
+    process_raw_fixtures()
