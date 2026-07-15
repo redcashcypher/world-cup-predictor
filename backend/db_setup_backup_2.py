@@ -1,11 +1,10 @@
 import sqlite3
 import pandas as pd
 import os
-from golden_boot import build_golden_boot_leaderboard
 
 def load_all_assets_to_db():
     print("[Database] Beginning unified database synchronization...")
-
+    
     clean_matches_path = 'data/matches_clean.csv'
     feature_matrix_path = 'data/master_feature_matrix.csv'
     db_path = 'data/world_cup.db'
@@ -15,7 +14,7 @@ def load_all_assets_to_db():
         return
 
     conn = sqlite3.connect(db_path)
-
+    
     # Table 1: Raw Schedule (104 rows for the calendar/fixtures view)
     df_raw = pd.read_csv(clean_matches_path)
     df_raw.to_sql('raw_schedule', conn, if_exists='replace', index=False)
@@ -25,20 +24,6 @@ def load_all_assets_to_db():
     df_features = pd.read_csv(feature_matrix_path)
     df_features.to_sql('predicted_fixtures', conn, if_exists='replace', index=False)
     print(f"[Database] SUCCESS: Synchronized {len(df_features)} records to 'predicted_fixtures' table.")
-
-    # Table 3: Golden Boot leaderboard - REAL scorer data parsed directly from
-    # the same openfootball feed ingest_data.py already pulls, NOT mock data.
-    # golden_boot.py excludes own goals and correctly flags penalties -
-    # verified earlier against the live 2026 feed (Messi 8, Haaland 7,
-    # Mbappe 7, 14 own goals correctly excluded).
-    try:
-        df_goals = build_golden_boot_leaderboard()
-        df_goals.to_sql('player_goals', conn, if_exists='replace', index=False)
-        print(f"[Database] SUCCESS: Synchronized {len(df_goals)} records to 'player_goals' table.")
-    except Exception as e:
-        print(f"[Database] WARNING: Golden Boot sync failed ({e}). "
-              f"'player_goals' table will not exist until this succeeds - "
-              f"the API will correctly report 503 rather than serve stale data.")
 
     conn.close()
 

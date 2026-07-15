@@ -4,49 +4,34 @@ import os
 
 def process_raw_fixtures(input_path='data/world_cup_data.json', output_path='data/matches_clean.csv'):
     print("[ETL] Booting dimensional flattening engine...")
-
+    
     if not os.path.exists(input_path):
         print(f"CRITICAL ERROR: {input_path} not found. Please run ingest_data.py first.")
         return
 
     with open(input_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
-
+    
     matches = data.get('matches', [])
     records = []
-
+    
     for m in matches:
         # OpenFootball feeds sometimes nest names inside objects
         team1 = m.get('team1', {}).get('name') if isinstance(m.get('team1'), dict) else m.get('team1')
         team2 = m.get('team2', {}).get('name') if isinstance(m.get('team2'), dict) else m.get('team2')
-
-        # FIX: the raw feed has no top-level 'stadium' key at all - the venue
-        # is under 'ground'. Confirmed directly against the live JSON:
-        # {"group": "Group A", "ground": "Mexico City"} - no "stadium" key
-        # anywhere. m.get('stadium') was silently returning None for every
-        # single row.
-        stadium = m.get('ground', {}).get('name') if isinstance(m.get('ground'), dict) else m.get('ground')
-
-        # FIX: scores are NOT top-level 'score1'/'score2' keys - they're
-        # nested as score.ft = [home_goals, away_goals]. Confirmed directly:
-        # {"score": {"ft": [2, 0], "ht": [1, 0]}}. m.get('score1') was
-        # silently returning None for every row, played or not - this was
-        # the actual root cause of the "every score is null" mystery from
-        # earlier, not the SQLite loader we spent time ruling out.
-        ft = (m.get('score') or {}).get('ft')
-        score1, score2 = (ft[0], ft[1]) if ft else (None, None)
-
+        stadium = m.get('stadium', {}).get('name') if isinstance(m.get('stadium'), dict) else m.get('stadium')
+        
         records.append({
             'date': m.get('date'),
             'team1': team1,
             'team2': team2,
-            'score1': score1,
-            'score2': score2,
+            'score1': m.get('score1'),
+            'score2': m.get('score2'),
             'round': m.get('round'),
             'group': m.get('group'),
             'stadium': stadium
         })
-
+    
     df = pd.DataFrame(records)
     df.to_csv(output_path, index=False)
     print(f"[ETL] SUCCESS: Flattened {len(df)} matches. Schema locked and saved to {output_path}")

@@ -53,8 +53,6 @@ def get_raw_schedule():
         matches = [dict(row) for row in cursor.fetchall()]
         conn.close()
         return {"status": "success", "count": len(matches), "data": matches}
-    except HTTPException:
-        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -103,8 +101,6 @@ def get_ml_predictions():
             })
 
         return {"status": "success", "count": len(results), "data": results}
-    except HTTPException:
-        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
